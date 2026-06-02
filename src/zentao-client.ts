@@ -68,6 +68,7 @@ export class ZentaoClient {
   private http: AxiosInstance;
   private sessionID: string = '';
   private isLoggedIn: boolean = false;
+  private token: string = '';
   
   // 内置 API 认证相关属性
   private legacySessionID: string = '';
@@ -83,8 +84,15 @@ export class ZentaoClient {
   constructor(config: ZentaoConfig) {
     this.config = config;
 
-    // 规范化 URL
-    const baseURL = config.url.endsWith('/') ? config.url.slice(0, -1) : config.url;
+    // 规范化 URL - 移除末尾的斜杠，但不包含 /api.php/v1
+    let baseURL = config.url.endsWith('/') ? config.url.slice(0, -1) : config.url;
+    
+    // 如果 URL 包含 /api.php/v1，将其移除（因为我们会统一拼接）
+    if (baseURL.includes('/api.php/v1')) {
+      baseURL = baseURL.replace('/api.php/v1', '');
+    }
+    
+    console.error(`[DEBUG] baseURL: ${baseURL}`);
 
     // 创建 axios 实例配置
     const axiosConfig: Parameters<typeof axios.create>[0] = {
@@ -92,6 +100,7 @@ export class ZentaoClient {
       timeout: 30000,
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'application/json',
       },
     };
 
@@ -103,6 +112,29 @@ export class ZentaoClient {
     }
 
     this.http = axios.create(axiosConfig);
+    
+    // 添加请求拦截器用于调试
+    this.http.interceptors.request.use(request => {
+      console.error(`[DEBUG] 请求: ${request.method?.toUpperCase()} ${request.baseURL}${request.url}`);
+      if (request.data) {
+        console.error(`[DEBUG] 请求体: ${JSON.stringify(request.data)}`);
+      }
+      return request;
+    });
+    
+    this.http.interceptors.response.use(
+      response => {
+        console.error(`[DEBUG] 响应: ${response.status} ${response.config.url}`);
+        return response;
+      },
+      error => {
+        console.error(`[DEBUG] 响应错误: ${error.response?.status} ${error.config?.url}`);
+        if (error.response?.data) {
+          console.error(`[DEBUG] 错误数据: ${JSON.stringify(error.response.data)}`);
+        }
+        return Promise.reject(error);
+      }
+    );
   }
 
   /**
@@ -110,8 +142,13 @@ export class ZentaoClient {
    * @returns Session ID
    */
   private async getSessionID(): Promise<string> {
-    const response = await this.http.get('/api.php/v1/tokens');
-    return response.data.data || response.data.sessionID || response.data;
+    try {
+      const response = await this.http.get('/api.php/v1/tokens');
+      return response.data.data || response.data.sessionID || response.data;
+    } catch (error) {
+      console.error('[DEBUG] getSessionID 失败:', error);
+      return '';
+    }
   }
 
   /**
@@ -119,40 +156,55 @@ export class ZentaoClient {
    * @returns 是否登录成功
    */
   async login(): Promise<boolean> {
-    if (this.isLoggedIn) {
+    if (this.isLoggedIn && this.token) {
       return true;
     }
 
     try {
-      // 获取 session
-      this.sessionID = await this.getSessionID();
-
-      // 密码 MD5 加密
-      const passwordMd5 = CryptoJS.MD5(this.config.password).toString();
-
-      // 登录请求
-      const response = await this.http.post(`/api.php/v1/tokens`, {
+      console.error('[DEBUG] 开始登录...');
+      console.error(`[DEBUG] 账号: ${this.config.account}`);
+      
+      // 直接使用明文密码，按照 Postman 的格式
+      const requestBody = {
         account: this.config.account,
-        password: passwordMd5,
-      });
+        password: this.config.password,
+      };
+      console.error(`[DEBUG] 请求体: ${JSON.stringify(requestBody)}`);
+
+      // 发送登录请求
+      const response = await this.http.post('/api.php/v1/tokens', requestBody);
+      
+      console.error(`[DEBUG] 响应状态: ${response.status}`);
+      console.error(`[DEBUG] 响应数据: ${JSON.stringify(response.data)}`);
 
       if (response.data.token) {
-        // 新版本 API 返回 token
-        this.http.defaults.headers.common['Token'] = response.data.token;
+        this.token = response.data.token;
+        // 设置 token 到请求头（两种方式都试试）
+        this.http.defaults.headers.common['Token'] = this.token;
+        this.http.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
         this.isLoggedIn = true;
+        console.error('[DEBUG] 登录成功，token 已保存');
+        return true;
       } else if (response.data.data?.token) {
-        this.http.defaults.headers.common['Token'] = response.data.data.token;
+        this.token = response.data.data.token;
+        this.http.defaults.headers.common['Token'] = this.token;
+        this.http.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
         this.isLoggedIn = true;
+        console.error('[DEBUG] 登录成功，使用 data.token');
+        return true;
       } else {
-        // 老版本可能使用 session
-        this.http.defaults.headers.common['Cookie'] = `zentaosid=${this.sessionID}`;
-        this.isLoggedIn = true;
+        console.error('[DEBUG] 响应中未找到 token');
+        throw new Error('登录响应中未找到 token');
       }
-
-      return true;
-    } catch (error) {
-      console.error('禅道登录失败:', error);
-      throw new Error(`禅道登录失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    } catch (error: any) {
+      console.error('[DEBUG] 登录失败详情:');
+      console.error(`[DEBUG] 错误消息: ${error.message}`);
+      if (error.response) {
+        console.error(`[DEBUG] 响应状态: ${error.response.status}`);
+        console.error(`[DEBUG] 响应数据: ${JSON.stringify(error.response.data)}`);
+        console.error(`[DEBUG] 请求 URL: ${error.config?.url}`);
+      }
+      throw new Error(`禅道登录失败: ${error.message}`);
     }
   }
 
@@ -408,14 +460,12 @@ export class ZentaoClient {
         data
       );
       
-      // 尝试多种响应格式
       if (response.data.data) {
         return response.data.data;
       }
       if (response.data && typeof response.data === 'object' && 'id' in response.data) {
         return response.data as unknown as Story;
       }
-      // 返回完整响应作为调试信息
       return response.data as unknown as Story;
     } catch (error: unknown) {
       const axiosError = error as { response?: { data?: unknown }; message?: string };
@@ -1817,4 +1867,3 @@ export class ZentaoClient {
   }
 
 }
-
