@@ -364,6 +364,8 @@ export interface UpdateBugParams {
   deadline?: string;
   /** 褰卞搷鐗堟湰 */
   openedBuild?: string[];
+  /** 鎸囨淳缁?*/
+  assignedTo?: string;
 }
 
 // ==================== 鏇存柊/鍒犻櫎/鍙樻洿 Story 鐩稿叧绫诲瀷 ====================
@@ -492,6 +494,42 @@ export interface UpdateTaskParams {
   deadline?: string;
   /** 浠诲姟鎻忚堪 */
   desc?: string;
+}
+
+/** 瀹屾垚浠诲姟鍙傛暟 */
+export interface FinishTaskParams {
+  /** 浠诲姟 ID */
+  id: number;
+  /** 宸叉秷鑰楀伐鏃?*/
+  consumed?: number;
+  /** 鍓╀綑宸ユ椂 */
+  left?: number;
+  /** 澶囨敞 */
+  comment?: string;
+}
+
+/** 鍏抽棴浠诲姟鍙傛暟 */
+export interface CloseTaskParams {
+  /** 浠诲姟 ID */
+  id: number;
+  /** 澶囨敞 */
+  comment?: string;
+}
+
+/** 鍙栨秷浠诲姟鍙傛暟 */
+export interface CancelTaskParams {
+  /** 浠诲姟 ID */
+  id: number;
+  /** 澶囨敞 */
+  comment?: string;
+}
+
+/** 婵€娲讳换鍔″弬鏁?*/
+export interface ActivateTaskParams {
+  /** 浠诲姟 ID */
+  id: number;
+  /** 澶囨敞 */
+  comment?: string;
 }
 
 // ==================== 鐢ㄦ埛 (Users) 鐩稿叧绫诲瀷 ====================
@@ -1124,4 +1162,65 @@ export interface EditDocModuleParams {
   root: number;
   /** 鐖剁洰褰?ID */
   parent?: number;
+}
+
+// ==================== 测试单 (TestTask / 提测单) ====================
+
+/** 测试单状态 */
+export type TestTaskStatus = 'wait' | 'doing' | 'done' | 'blocked';
+
+/** 测试单信息 */
+export interface TestTask {
+  id: number;
+  project: number;
+  product: number;
+  execution?: number;
+  build?: number;
+  owner?: string;
+  name: string;
+  desc?: string;
+  status: TestTaskStatus;
+  begin?: string;
+  end?: string;
+  pri?: number;
+  members?: string[];
+  report?: string;
+  mailto?: string[];
+  openedBy?: string;
+  openedDate?: string;
+  lastRunner?: string;
+  lastRunDate?: string;
+  lastRunResult?: string;
+}
+
+/** 创建测试单参数 */
+export interface CreateTestTaskParams {
+  project?: number;
+  execution?: number;
+  name: string;
+  type?: 'feature' | 'performance' | 'config' | 'install' | 'security' | 'other';
+  build?: number;
+  owner?: string;
+  members?: string[];
+  begin?: string;
+  end?: string;
+  desc?: string;
+  pri?: number;
+  mailto?: string[];
+}
+
+/** 更新测试单参数 */
+export interface UpdateTestTaskParams {
+  id: number;
+  name?: string;
+  type?: string;
+  build?: number;
+  owner?: string;
+  members?: string[];
+  begin?: string;
+  end?: string;
+  desc?: string;
+  pri?: number;
+  status?: TestTaskStatus;
+  mailto?: string[];
 }

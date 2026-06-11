@@ -29,6 +29,10 @@ import {
   Task,
   CreateTaskParams,
   UpdateTaskParams,
+  FinishTaskParams,
+  CloseTaskParams,
+  CancelTaskParams,
+  ActivateTaskParams,
   User,
   CreateUserParams,
   UpdateUserParams,
@@ -57,6 +61,9 @@ import {
   EditDocParams,
   CreateDocModuleParams,
   EditDocModuleParams,
+  TestTask,
+  CreateTestTaskParams,
+  UpdateTestTaskParams,
 } from './types.js';
 
 /**
@@ -242,14 +249,23 @@ export class ZentaoClient {
   /**
    * 获取指派给某人的 Bug
    * @param account - 用户账号
+   * @param productID - 产品 ID
    * @param limit - 返回数量限制
    * @returns Bug 列表
    */
-  async getAssignedBugs(account: string, limit: number = 100): Promise<Bug[]> {
+  async getAssignedBugs(account: string, productID?: number, limit: number = 100): Promise<Bug[]> {
     await this.ensureLogin();
 
+    if (!productID) {
+      // 尝试不带产品的全局查询
+      const response: AxiosResponse<ApiResponse<Bug[]>> = await this.http.get(
+        `/api.php/v1/bugs?assignedTo=${account}&limit=${limit}`
+      );
+      return response.data.data || (response.data as unknown as { bugs: Bug[] }).bugs || [];
+    }
+
     const response: AxiosResponse<ApiResponse<Bug[]>> = await this.http.get(
-      `/api.php/v1/bugs?assignedTo=${account}&limit=${limit}`
+      `/api.php/v1/products/${productID}/bugs?assignedTo=${account}&limit=${limit}`
     );
     return response.data.data || (response.data as unknown as { bugs: Bug[] }).bugs || [];
   }
@@ -964,6 +980,149 @@ export class ZentaoClient {
       return response.data.data || (response.data as unknown as Task);
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * 获取指派给某人的任务
+   * @param account - 用户账号
+   * @param limit - 返回数量限制
+   * @returns 任务列表
+   */
+  async getAssignedTasks(account: string, limit: number = 100): Promise<Task[]> {
+    await this.ensureLogin();
+
+    const response: AxiosResponse<ApiResponse<Task[]>> = await this.http.get(
+      `/api.php/v1/tasks?assignedTo=${account}&limit=${limit}`
+    );
+    return response.data.data || (response.data as unknown as { tasks: Task[] }).tasks || [];
+  }
+
+  /**
+   * 获取项目任务列表
+   * @param projectID - 项目 ID
+   * @param limit - 返回数量限制
+   * @returns 任务列表
+   */
+  async getProjectTasks(projectID: number, limit: number = 100): Promise<Task[]> {
+    await this.ensureLogin();
+
+    const response: AxiosResponse<ApiResponse<Task[]>> = await this.http.get(
+      `/api.php/v1/projects/${projectID}/tasks?limit=${limit}`
+    );
+    return response.data.data || (response.data as unknown as { tasks: Task[] }).tasks || [];
+  }
+
+  /**
+   * 开始任务
+   * @param taskID - 任务 ID
+   * @returns 操作结果
+   */
+  async startTask(taskID: number): Promise<boolean> {
+    await this.ensureLogin();
+
+    try {
+      await this.http.post(`/api.php/v1/tasks/${taskID}/start`);
+      return true;
+    } catch (error) {
+      console.error('开始任务失败:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 完成任务
+   * @param params - 完成任务参数
+   * @returns 操作结果
+   */
+  async finishTask(params: FinishTaskParams): Promise<boolean> {
+    await this.ensureLogin();
+
+    try {
+      const data: Record<string, unknown> = {};
+      if (params.consumed !== undefined) data.consumed = params.consumed;
+      if (params.left !== undefined) data.left = params.left;
+      if (params.comment !== undefined) data.comment = params.comment;
+
+      await this.http.post(`/api.php/v1/tasks/${params.id}/finish`, data);
+      return true;
+    } catch (error) {
+      console.error('完成任务失败:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 关闭任务
+   * @param params - 关闭任务参数
+   * @returns 操作结果
+   */
+  async closeTask(params: CloseTaskParams): Promise<boolean> {
+    await this.ensureLogin();
+
+    try {
+      await this.http.post(`/api.php/v1/tasks/${params.id}/close`, {
+        comment: params.comment || '',
+      });
+      return true;
+    } catch (error) {
+      console.error('关闭任务失败:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 取消任务
+   * @param params - 取消任务参数
+   * @returns 操作结果
+   */
+  async cancelTask(params: CancelTaskParams): Promise<boolean> {
+    await this.ensureLogin();
+
+    try {
+      await this.http.post(`/api.php/v1/tasks/${params.id}/cancel`, {
+        comment: params.comment || '',
+      });
+      return true;
+    } catch (error) {
+      console.error('取消任务失败:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 激活任务（重新打开）
+   * @param params - 激活任务参数
+   * @returns 操作结果
+   */
+  async activateTask(params: ActivateTaskParams): Promise<boolean> {
+    await this.ensureLogin();
+
+    try {
+      await this.http.post(`/api.php/v1/tasks/${params.id}/activate`, {
+        comment: params.comment || '',
+      });
+      return true;
+    } catch (error) {
+      console.error('激活任务失败:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 删除任务
+   * @param taskID - 任务 ID
+   * @returns 操作结果
+   */
+  async deleteTask(taskID: number): Promise<boolean> {
+    await this.ensureLogin();
+
+    try {
+      await this.http.delete(`/api.php/v1/tasks/${taskID}`);
+      return true;
+    } catch (error) {
+      console.error('删除任务失败:', error);
+      return false;
     }
   }
 
@@ -1866,4 +2025,135 @@ export class ZentaoClient {
     }
   }
 
+  // ==================== 测试单 (TestTask / 提测单) 相关方法 ====================
+
+  /**
+   * 获取执行的测试单列表
+   * @param executionID - 执行 ID
+   * @param limit - 返回数量限制
+   * @returns 测试单列表
+   */
+  async getTestTasks(executionID: number, limit: number = 100): Promise<TestTask[]> {
+    await this.ensureLogin();
+
+    const response: AxiosResponse<ApiResponse<TestTask[]>> = await this.http.get(
+      `/api.php/v1/executions/${executionID}/testtasks?limit=${limit}`
+    );
+    return response.data.data || (response.data as unknown as { testtasks: TestTask[] }).testtasks || [];
+  }
+
+  /**
+   * 获取测试单详情
+   * @param testTaskID - 测试单 ID
+   * @returns 测试单详情
+   */
+  async getTestTask(testTaskID: number): Promise<TestTask | null> {
+    await this.ensureLogin();
+
+    try {
+      const response: AxiosResponse<ApiResponse<TestTask>> = await this.http.get(
+        `/api.php/v1/testtasks/${testTaskID}`
+      );
+      return response.data.data || (response.data as unknown as TestTask);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 创建测试单
+   * @param params - 创建测试单参数
+   * @returns 新创建的测试单
+   */
+  async createTestTask(params: CreateTestTaskParams): Promise<TestTask> {
+    await this.ensureLogin();
+
+    if (!params.execution && !params.project) {
+      throw new Error('创建测试单需要指定 execution 或 project');
+    }
+
+    const data: Record<string, unknown> = {
+      name: params.name,
+    };
+    if (params.type !== undefined) data.type = params.type;
+    if (params.build !== undefined) data.build = params.build;
+    if (params.owner !== undefined) data.owner = params.owner;
+    if (params.members !== undefined) data.members = params.members;
+    if (params.begin !== undefined) data.begin = params.begin;
+    if (params.end !== undefined) data.end = params.end;
+    if (params.desc !== undefined) data.desc = params.desc;
+    if (params.pri !== undefined) data.pri = params.pri;
+    if (params.mailto !== undefined) data.mailto = params.mailto;
+
+    const basePath = params.execution
+      ? `/api.php/v1/executions/${params.execution}/testtasks`
+      : `/api.php/v1/projects/${params.project}/testtasks`;
+
+    const response: AxiosResponse<ApiResponse<TestTask>> = await this.http.post(basePath, data);
+    return response.data.data || (response.data as unknown as TestTask);
+  }
+
+  /**
+   * 更新测试单
+   * @param params - 更新测试单参数
+   * @returns 更新后的测试单
+   */
+  async updateTestTask(params: UpdateTestTaskParams): Promise<TestTask | null> {
+    await this.ensureLogin();
+
+    const updateData: Record<string, unknown> = {};
+    if (params.name !== undefined) updateData.name = params.name;
+    if (params.type !== undefined) updateData.type = params.type;
+    if (params.build !== undefined) updateData.build = params.build;
+    if (params.owner !== undefined) updateData.owner = params.owner;
+    if (params.members !== undefined) updateData.members = params.members;
+    if (params.begin !== undefined) updateData.begin = params.begin;
+    if (params.end !== undefined) updateData.end = params.end;
+    if (params.desc !== undefined) updateData.desc = params.desc;
+    if (params.pri !== undefined) updateData.pri = params.pri;
+    if (params.status !== undefined) updateData.status = params.status;
+    if (params.mailto !== undefined) updateData.mailto = params.mailto;
+
+    try {
+      const response: AxiosResponse<ApiResponse<TestTask>> = await this.http.put(
+        `/api.php/v1/testtasks/${params.id}`,
+        updateData
+      );
+      return response.data.data || (response.data as unknown as TestTask);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 删除测试单
+   * @param testTaskID - 测试单 ID
+   * @returns 操作结果
+   */
+  async deleteTestTask(testTaskID: number): Promise<boolean> {
+    await this.ensureLogin();
+
+    try {
+      await this.http.delete(`/api.php/v1/testtasks/${testTaskID}`);
+      return true;
+    } catch (error) {
+      console.error('删除测试单失败:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 获取项目测试单列表
+   * @param projectID - 项目 ID
+   * @param limit - 返回数量限制
+   * @returns 测试单列表
+   */
+  async getProjectTestTasks(projectID: number, limit: number = 100): Promise<TestTask[]> {
+    await this.ensureLogin();
+
+    const response: AxiosResponse<ApiResponse<TestTask[]>> = await this.http.get(
+      `/api.php/v1/projects/${projectID}/testtasks?limit=${limit}`
+    );
+    return response.data.data || (response.data as unknown as { testtasks: TestTask[] }).testtasks || [];
+  }
 }
